@@ -88,3 +88,33 @@ def train_decision_tree():
     print("Accuracy", accuracy) 
 
 
+from sklearn.ensemble import RandomForestClassifier
+
+train_data = MSLR10k("train")
+
+# Accuracy: 55 %
+def train_random_forest():
+    clf = RandomForestClassifier(n_estimators=20, max_depth=4)
+    clf.fit(train_data.X, train_data.Y)
+    
+    pred = clf.predict(train_data.X)
+
+    accuracy = np.sum(pred == train_data.Y)/ train_data.n_lines
+    print("Accuracy of random forest model", accuracy) 
+
+
+from sklearn.ensemble import HistGradientBoostingClassifier
+
+# Accuracy: 58%
+def train_gradient_boosted_trees():
+    clf = HistGradientBoostingClassifier(max_depth=4)
+    clf.fit(train_data.X, train_data.Y)
+
+    pred = clf.predict(train_data.X)
+
+    accuracy = np.sum(pred == train_data.Y)/ train_data.n_lines
+    print("Accuracy of gradient boosted trees", accuracy) 
+
+
+train_decision_tree()
+train_gradient_boosted_trees()

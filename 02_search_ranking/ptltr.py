@@ -4,12 +4,37 @@ import torch
 from torch import nn
 
 
+def min_max_scaler(tensor, col_min, col_max):
+    """
+    Apply Min-Max scaling to each column of the input tensor.
+
+    Args:
+    tensor (torch.Tensor): The input tensor where each column will be scaled.
+    min_val (float): The minimum value of the target scaling range (default: 0.0).
+    max_val (float): The maximum value of the target scaling range (default: 1.0).
+
+    Returns:
+    torch.Tensor: The scaled tensor.
+    """
+    
+    # Avoid division by zero by setting a small epsilon where col_max == col_min
+    epsilon = 1e-8
+    col_range = col_max - col_min
+    col_range = torch.where(col_range == 0, torch.tensor(epsilon), col_range)
+    
+    # Perform min-max scaling
+    scaled_tensor = (tensor - col_min) / col_range  # Scale to [0, 1]
+    
+    return scaled_tensor
+
+
 class MSLR10k(Dataset):
-    def __init__(self, dtype):
+    def __init__(self, dtype, col_min=None, col_max=None):
+        self.dtype = dtype
         self.fname = f"MSLR-WEB10K/Fold1/{dtype}.txt"
         self.feature_size = 136
         self.count_lines()
-        self.read()
+        self.read(col_min, col_max)
 
     def count_lines(self):
         n_lines = 0
@@ -18,7 +43,7 @@ class MSLR10k(Dataset):
                 n_lines += 1
         self.n_lines = n_lines
 
-    def read(self):
+    def read(self, col_min, col_max):
         with open(self.fname, "r") as fp:
             X = torch.zeros((self.n_lines, self.feature_size), dtype=torch.float)
             Y = torch.zeros((self.n_lines), dtype=torch.int8)
@@ -39,11 +64,17 @@ class MSLR10k(Dataset):
                 qid[ix] = int(tokens[1].split(":")[1])
 
         self.X, self.Y = X, Y
+        if self.dtype in ("train", "sample"):
+            self.col_min = self.X.min(dim=0, keepdim=True)[0]
+            self.col_max = self.X.max(dim=0, keepdim=True)[0]
+            self.scaled_X = min_max_scaler(self.X, self.col_min, self.col_max)
+        else: 
+            self.scaled_X = min_max_scaler(self.X, col_min, col_max)
 
     def __getitem__(self, idx):
         y = torch.zeros((5))
         y[self.Y[idx]] = 1
-        return self.X[idx], y
+        return self.scaled_X[idx], y
 
     def __len__(self):
         return self.n_lines
@@ -56,8 +87,10 @@ class PointWise(nn.Module):
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(136, 64),
             nn.ReLU(),
+            nn.Dropout(p=0.5),
             nn.Linear(64, 32),
             nn.ReLU(),
+            nn.Dropout(p=0.5),
             nn.Linear(32, 5)
         )
 
@@ -112,8 +145,10 @@ def test(dataloader, model, loss_fn):
 
 
 def run_nn():
-    train_data = MSLR10k("train") 
-    test_data = MSLR10k("test")
+    train_data = MSLR10k("train")
+    col_min, col_max = train_data.col_min, train_data.col_max
+
+    test_data = MSLR10k("test", col_min, col_max)
     # sample_data = MSLR10k("sample")
 
     batch_size = 64
